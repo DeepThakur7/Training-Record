@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Location‑Gated Microsoft Form (Mobile‑friendly)</title>
+  <style>
+    :root { color-scheme: light dark; }
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, "Noto Sans", sans-serif; margin: 1.5rem; }
+    .card { max-width: 720px; border: 1px solid #ccc; border-radius: 12px; padding: 1rem; }
+    h1 { margin-top: 0; }
+    .status { margin-top: .75rem; font-size: 1rem; }
+    .ok { color: #0a7; }
+    .err { color: #c00; }
+    .muted { color: #666; }
+    .actions { margin-top: 1rem; display: flex; gap: .75rem; flex-wrap: wrap; }
+    button { font-size: 1rem; padding: .7rem 1rem; }
+    pre { white-space: pre-wrap; font-size: .9rem; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>Open Form (only at specified location)</h1>
+    <p class="muted">If you’re inside the allowed area, the button below will enable and open the form.</p>
+
+    <div class="actions">
+      <button id="check">Check my location</button>
+      <button id="openForm" disabled>Open Form</button>
+      <button id="resetPerms">Reset permission hint</button>
+    </div>
+
+    <div id="status" class="status muted">Waiting for action…</div>
+
+    <details style="margin-top:1rem;">
+      <summary>Diagnostics</summary>
+      <pre id="diag" class="muted"></pre>
+    </details>
+  </div>
+
+<script>
+  // Config: hard-coded values (not shown/editable in UI)
+  const CONFIG = {
+    targetLat: 10.773000,
+    targetLon: 79.636500,
+    radiusMeters: 100,
+    formUrl: 'https://forms.office.com/Pages/ResponsePage.aspx?...'
+  };
+
+  const statusEl = document.getElementById('status');
+  const openBtn  = document.getElementById('openForm');
+  const checkBtn = document.getElementById('check');
+  const diagEl   = document.getElementById('diag');
+  const resetBtn = document.getElementById('resetPerms');
+
+  const toRad = d => d * Math.PI / 180;
+  function haversineMeters(lat1, lon1, lat2, lon2) {
+    const R = 6371000;
+    const dLat = toRad(lat2 - lat1);
+    const dLon = toRad(lon2 - lon1);
+    const a = Math.sin(dLat/2)**2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon/2)**2;
+    return 2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  }
+
+  function setStatus(text, cls='muted') {
+    statusEl.textContent = text;
+    statusEl.className = 'status ' + cls;
+  }
+
+  function log(line) {
+    diagEl.textContent += line + "\n";
+  }
+
+  async function checkPermission() {
+    if (!('permissions' in navigator)) return null;
+    try {
+      const s = await navigator.permissions.query({ name: 'geolocation' });
+      return s.state; // 'granted' | 'prompt' | 'denied'
+    } catch (_) { return null; }
+  }
+
+  async function doCheck() {
+    diagEl.textContent = '';
+    log('Origin: ' + location.origin);
+    log('Protocol: ' + location.protocol);
+
+    if (location.protocol !== 'https:' && location.hostname !== 'localhost') {
+      setStatus('This page must be served over HTTPS for location to work.', 'err');
+      log('FAIL: Not HTTPS nor localhost');
+      return;
+    }
+
+    if (!('geolocation' in navigator)) {
+      setStatus('Geolocation is not supported on this device/browser.', 'err');
+      log('FAIL: navigator.geolocation missing');
+      return;
+    }
+
+    const perm = await checkPermission();
+    if (perm) { log('Permission state: ' + perm); }
+
+    setStatus('Requesting your location… (allow access if prompted)');
+
+    let settled = false;
+    const onSuccess = (pos) => {
+      if (settled) return; settled = true;
+      const { latitude, longitude, accuracy } = pos.coords;
+      const dist = haversineMeters(latitude, longitude, CONFIG.targetLat, CONFIG.targetLon);
+      const inside = dist <= CONFIG.radiusMeters;
+      openBtn.disabled = !inside;
+      setStatus(
+        inside ? `Inside geofence. Distance ${dist.toFixed(1)} m (accuracy ±${Math.round(accuracy)} m).`
+               : `Outside geofence. Distance ${dist.toFixed(1)} m (accuracy ±${Math.round(accuracy)} m).`,
+        inside ? 'ok' : 'err'
+      );
+      log(`Coords: ${latitude.toFixed(6)}, ${longitude.toFixed(6)} | Dist: ${dist.toFixed(2)} m | Acc: ±${Math.round(accuracy)} m`);
+    };
+
+    const onError = (err) => {
+      if (settled) return; settled = true;
+      openBtn.disabled = true;
+      setStatus(`Location error: ${err.message} (code ${err.code}).`, 'err');
+      log('Error: ' + JSON.stringify({ code: err.code, message: err.message }));
+    };
+
+    // Prefer watchPosition for mobile to get fresher GPS fixes
+    let watchId = null;
+    try {
+      watchId = navigator.geolocation.watchPosition(onSuccess, onError, {
+        enableHighAccuracy: true,
+        timeout: 15000,
+        maximumAge: 0
+      });
+      // Fallback: also trigger a single shot in case watch stalls
+      navigator.geolocation.getCurrentPosition(onSuccess, onError, {
+        enableHighAccuracy: true,
+        timeout: 15000,
+        maximumAge: 0
+      });
+    } catch (e) {
+      onError({ code: -1, message: e.message || 'Unknown error' });
+    }
+
+    // Stop watch after 20s to conserve battery
+    setTimeout(() => { if (watchId !== null) navigator.geolocation.clearWatch(watchId); }, 20000);
+  }
+
+  checkBtn.addEventListener('click', doCheck);
+
+  openBtn.addEventListener('click', () => {
+    if (!CONFIG.formUrl || !/^https?:\/\//.test(CONFIG.formUrl)) {
+      setStatus('Form URL is not configured. Contact the administrator.', 'err');
+      return;
+    }
+    // Must be called from a user gesture (click) to satisfy mobile popup policies
+    window.open(CONFIG.formUrl, '_blank', 'noopener');
+  });
+
+  // Helper: explain how to reset site permission on common platforms
+  resetBtn.addEventListener('click', () => {
+    alert(`If location is blocked:\n\n• Android Chrome: Site info (padlock) > Permissions > Location > Allow\n• iPhone Safari: Settings > Privacy & Security > Location Services > Safari Websites > While Using the App (Precise: On)\n• iOS per‑site: Safari > AA > Website Settings > Location > Ask\n• Edge/Chrome iOS: Settings > Privacy > Location > Allow\n`);
+  });
+</script>
+</body>
+</html>
