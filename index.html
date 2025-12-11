@@ -1,115 +1,93 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
+  <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Location‑Gated Microsoft Form</title>
+  <title>Location-based Microsoft Form</title>
   <style>
-    :root { color-scheme: light dark; }
-    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, "Noto Sans", sans-serif; margin: 2rem; }
-    .card { max-width: 720px; border: 1px solid #ccc; border-radius: 12px; padding: 1.25rem; }
-    h1 { margin-top: 0; }
-    .status { margin-top: .75rem; font-size: .95rem; }
-    .ok { color: #0a7; }
-    .err { color: #c00; }
-    .muted { color: #666; }
-    .actions { margin-top: 1rem; display: flex; gap: .5rem; }
-    .small { font-size: .85rem; }
-    button { font-size: 1rem; padding: .6rem .9rem; }
+    body { font-family: Arial, sans-serif; margin: 20px; }
+    .hidden { display: none; }
+    .status { margin: 10px 0; padding: 10px; border-radius: 5px; }
+    .ok { background: #e7f6ec; border: 1px solid #bfe3cc; }
+    .warn { background: #fff4e5; border: 1px solid #ffd59f; }
+    .err { background: #fdecea; border: 1px solid #f5c2c0; }
+    button { padding: 10px 15px; margin-top: 10px; }
   </style>
 </head>
 <body>
-  <div class="card">
-    <h1>Open Form (only at specified location)</h1>
-    <p class="muted small">This page uses the browser <strong>Geolocation API</strong> to verify you are at the target location before opening the Microsoft Form.</p>
+  <h1>Location-based Microsoft Form Access</h1>
+  <div id="userStatus" class="status warn">Checking your location…</div>
+  <button id="openFormBtn" class="hidden">Open Form</button>
 
-    <div class="actions">
-      <button id="check">Check my location</button>
-      <button id="openForm" disabled>Open Form</button>
-    </div>
-
-    <div id="status" class="status muted">Waiting for action…</div>
-    <div id="debug" class="small muted"></div>
-
-    <details class="small" style="margin-top:1rem;">
-      <summary>Privacy & notes</summary>
-      <ul>
-        <li>This page only checks your current location locally in the browser and does not upload it anywhere.</li>
-        <li>Your Microsoft Form link and target coordinates are fixed by the site owner and are not shown or editable here.</li>
-      </ul>
-    </details>
+  <h2>Admin Panel</h2>
+  <div id="adminGate">
+    <input type="password" id="adminPass" placeholder="Enter admin passphrase" />
+    <button id="unlockAdmin">Unlock Admin</button>
   </div>
 
+  <form id="adminForm" class="hidden">
+    <input type="url" id="formUrl" placeholder="Microsoft Form URL" required />
+    <input type="number" id="targetLat" step="0.000001" placeholder="Latitude" required />
+    <input type="number" id="targetLng" step="0.000001" placeholder="Longitude" required />
+    <input type="number" id="radiusMeters" step="1" placeholder="Radius (meters)" required />
+    <button type="submit">Save Configuration</button>
+  </form>
+
 <script>
-  // === Configuration (hard-coded; not visible/editable in UI) ===
-  // Set your target coordinates and radius here
-  const CONFIG = {
-    targetLat: 22.3666,    // CHANGE: your latitude
-    targetLon: 87.3596,    // CHANGE: your longitude
-    radiusMeters:100,       // CHANGE: allowed radius in meters
-    formUrl: 'https://forms.office.com/Pages/ResponsePage.aspx?id=yXdC9f7aqkSFpHPVx8UkUBDlBp6oi0hGjvqBqX5Zo59UNTJEUzRYTTRRT0dGTDNRS1ZQWjRCNFpQWS4u' // CHANGE: your MS Forms URL
+const ADMIN_PASSPHRASE = 'YOUR_STRONG_ADMIN_PASSPHRASE';
+const storageKey = 'geoFormConfig.v1';
+let cfg = JSON.parse(localStorage.getItem(storageKey) || '{}');
+if (!cfg.formUrl) cfg = { formUrl: 'https://forms.office.com/', targetLat: 28.6139, targetLng: 77.2090, radiusMeters: 200 };
+
+function haversineDistanceMeters(lat1, lon1, lat2, lon2) {
+  const R = 6371000; const toRad = deg => deg * Math.PI / 180;
+  const dLat = toRad(lat2 - lat1); const dLon = toRad(lon2 - lon1);
+  const a = Math.sin(dLat/2)**2 + Math.cos(toRad(lat1))*Math.cos(toRad(lat2))*Math.sin(dLon/2)**2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+}
+
+const userStatus = document.getElementById('userStatus');
+const openFormBtn = document.getElementById('openFormBtn');
+
+navigator.geolocation.getCurrentPosition(pos => {
+  const dist = haversineDistanceMeters(pos.coords.latitude, pos.coords.longitude, cfg.targetLat, cfg.targetLng);
+  if (dist <= cfg.radiusMeters) {
+    userStatus.textContent = `You are within ${Math.round(dist)} m of target.`;
+    userStatus.className = 'status ok';
+    openFormBtn.classList.remove('hidden');
+  } else {
+    userStatus.textContent = `You are ${Math.round(dist)} m away. Access allowed only within ${cfg.radiusMeters} m.`;
+    userStatus.className = 'status warn';
+  }
+}, err => {
+  userStatus.textContent = 'Location error: ' + err.message;
+  userStatus.className = 'status err';
+});
+
+openFormBtn.onclick = () => window.open(cfg.formUrl, '_blank');
+
+document.getElementById('unlockAdmin').onclick = () => {
+  if (document.getElementById('adminPass').value === ADMIN_PASSPHRASE) {
+    document.getElementById('adminGate').classList.add('hidden');
+    document.getElementById('adminForm').classList.remove('hidden');
+    document.getElementById('formUrl').value = cfg.formUrl;
+    document.getElementById('targetLat').value = cfg.targetLat;
+    document.getElementById('targetLng').value = cfg.targetLng;
+    document.getElementById('radiusMeters').value = cfg.radiusMeters;
+  } else alert('Incorrect passphrase');
+};
+
+document.getElementById('adminForm').onsubmit = e => {
+  e.preventDefault();
+  cfg = {
+    formUrl: document.getElementById('formUrl').value,
+    targetLat: parseFloat(document.getElementById('targetLat').value),
+    targetLng: parseFloat(document.getElementById('targetLng').value),
+    radiusMeters: parseInt(document.getElementById('radiusMeters').value)
   };
-
-  // Haversine distance (meters)
-  const toRad = d => d * Math.PI / 180;
-  function haversineMeters(lat1, lon1, lat2, lon2) {
-    const R = 6371000;
-    const dLat = toRad(lat2 - lat1);
-    const dLon = toRad(lon2 - lon1);
-    const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
-              Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
-              Math.sin(dLon/2) * Math.sin(dLon/2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    return R * c;
-  }
-
-  const statusEl = document.getElementById('status');
-  const debugEl  = document.getElementById('debug');
-  const openBtn  = document.getElementById('openForm');
-  const checkBtn = document.getElementById('check');
-
-  function setStatus(text, cls) {
-    statusEl.textContent = text;
-    statusEl.className = 'status ' + (cls || 'muted');
-  }
-
-  checkBtn.addEventListener('click', () => {
-    if (!('geolocation' in navigator)) {
-      setStatus('Geolocation is not supported by this browser.', 'err');
-      return;
-    }
-
-    setStatus('Requesting your location… (you may see a permission prompt)', 'muted');
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        const { latitude, longitude, accuracy } = pos.coords;
-        const dist = haversineMeters(latitude, longitude, CONFIG.targetLat, CONFIG.targetLon);
-        const inside = dist <= CONFIG.radiusMeters;
-        openBtn.disabled = !inside;
-        setStatus(
-          inside
-            ? `You are inside the geofence (distance: ${dist.toFixed(1)} m, accuracy: ±${Math.round(accuracy)} m). You can open the form.`
-            : `You are outside the geofence (distance: ${dist.toFixed(1)} m, accuracy: ±${Math.round(accuracy)} m). Move closer to the target.`,
-          inside ? 'ok' : 'err'
-        );
-        // You can comment out the next line to hide debug entirely
-        debugEl.textContent = '';
-      },
-      (err) => {
-        openBtn.disabled = true;
-        setStatus(`Error: ${err.message} (code ${err.code}).`, 'err');
-      },
-      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
-    );
-  });
-
-  openBtn.addEventListener('click', () => {
-    if (!CONFIG.formUrl || CONFIG.formUrl.indexOf('http') !== 0) {
-      setStatus('Form URL is not configured. Contact the administrator.', 'err');
-      return;
-    }
-    window.open(CONFIG.formUrl, '_blank', 'noopener');
-  });
+  localStorage.setItem(storageKey, JSON.stringify(cfg));
+  alert('Configuration saved!');
+};
 </script>
 </body>
 </html>
