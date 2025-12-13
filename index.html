@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Training Attendance Record Platform_THCM_Kharagpur</title>
+  <title>Location-based Microsoft Form</title>
   <style>
     :root { color-scheme: light dark; }
     body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; margin: 0; padding: 2rem; line-height: 1.5; background: #f7f7f9; color: #111; }
@@ -30,7 +30,7 @@
 </head>
 <body>
   <div class="card">
-    <h1>Training Attendance Record Platform_THCM_Kharagpur</h1>
+    <h1>Location-based Microsoft Form Access</h1>
     <p class="muted">This page shows a Form button only when you are within the configured location and radius.</p>
     <div id="userStatus" class="status warn">Checking your location…</div>
     <div class="center" style="margin-top: 1rem;">
@@ -40,6 +40,7 @@
     <details>
       <summary><strong>View current configuration</strong></summary>
       <div class="row">
+        <div><label>Form URL</label><div id="cfgUrl" class="small"></div></div>
         <div><label>Radius (meters)</label><div id="cfgRadius" class="small"></div></div>
         <div><label>Latitude</label><div id="cfgLat" class="small mono"></div></div>
         <div><label>Longitude</label><div id="cfgLng" class="small mono"></div></div>
@@ -57,7 +58,7 @@
       <div style="margin-top:0.5rem;">
         <button id="unlockAdmin">Unlock Admin</button>
       </div>
-      <p class="small muted" style="margin-top:0.5rem;">Tip:Please Ensure that Atttendance is done Correctly and all relevant details will be saved for Future Use.</p>
+      <p class="small muted" style="margin-top:0.5rem;">Tip: Prefer hosting behind authenticated pages (SharePoint/Azure Static Web Apps) for stronger security.</p>
     </div>
 
     <form id="adminForm" class="hidden" autocomplete="off">
